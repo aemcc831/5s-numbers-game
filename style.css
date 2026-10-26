@@ -147,11 +147,19 @@ body {
 }
 
 .card.found {
-  background: var(--success);
+  background: var(--success) !important;
   color: #fff;
   border-color: var(--success);
   opacity: 0.55;
   cursor: default;
+}
+
+/* Board before Start and after time is up */
+.board.locked .card {
+  cursor: not-allowed;
+}
+.board.locked .card:hover {
+  outline: none;
 }
 
 /* ===== Scoreboard ===== */
