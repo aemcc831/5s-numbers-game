@@ -177,7 +177,7 @@ body {
 
 .score-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 10px;
 }
 
@@ -234,4 +234,46 @@ body {
   left: 0;
   right: 0;
   height: 3px;
+}
+/* ===== Sustain: hidden gaps ===== */
+.board.sustain .card {
+  cursor: default;
+} /* cursor must not give gaps away */
+.board.sustain .card:hover {
+  outline: none;
+}
+
+.card.gap {
+  background: transparent !important;
+  border-color: transparent;
+  color: transparent; /* invisible but still clickable */
+}
+.card.gap.revealed {
+  background: #d93a3a !important;
+  border-color: #d93a3a;
+  color: #fff;
+}
+
+/* ===== Final results table ===== */
+.summary-table {
+  border-collapse: collapse;
+  margin: 10px 0;
+  min-width: 320px;
+}
+.summary-table th,
+.summary-table td {
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  text-align: left;
+}
+.summary-table th {
+  background: var(--bg);
+}
+.instructions h3 {
+  margin: 12px 0 4px;
+  font-size: 1rem;
+}
+.instructions ol {
+  margin: 4px 0;
+  padding-left: 20px;
 }

@@ -1,8 +1,9 @@
 // ===== Game settings =====
 const TARGET_COUNT = 50; // cards the player must find (1-50)
-const ROUND_SECONDS = 30; // length of each round
-const GRID_COLS = 12; // invisible grid used to stop cards overlapping
-const GRID_ROWS = 8; // 12 x 8 = 96 slots
+const ROUND_SECONDS = 30; // countdown for rounds 1-5
+const SUSTAIN_LIMIT = 60; // maximum seconds allowed in the Sustain round
+const GRID_COLS = 12;
+const GRID_ROWS = 8;
 const COLORS = [
   "#ffd6d6",
   "#d6e8ff",
@@ -54,12 +55,24 @@ const ROUNDS = [
     title: "Round 5: Standardize (Seiketsu)",
     text: "The best layout becomes the standard. Cards are arranged 1 to 50 in order, left to right and top to bottom, so anyone can do the job the same way.",
   },
+  {
+    name: "Sustain",
+    maxNumber: 50,
+    messy: false,
+    layout: "standard",
+    mode: "findMissing",
+    missingCount: 2,
+    title: "Round 6: Sustain (Shitsuke)",
+    text: "Someone didn't follow the standard, and two cards are missing from the workstation. Click the empty spots where the missing cards belong. The clock counts up, so see how fast you can spot the problem.",
+  },
 ];
 
 // ===== Page elements =====
 const board = document.getElementById("board");
 const timerEl = document.getElementById("timer");
+const timerTitleEl = document.getElementById("timer-title");
 const nextNumberEl = document.getElementById("next-number");
+const nextTitleEl = document.getElementById("next-title");
 const foundCountEl = document.getElementById("found-count");
 const startBtn = document.getElementById("start-btn");
 const instructionsEl = document.getElementById("instructions");
@@ -67,12 +80,14 @@ const roundLabelEl = document.getElementById("round-label");
 
 // ===== Game state =====
 let nextNumber = 1;
-let timeLeft = ROUND_SECONDS;
+let clock = ROUND_SECONDS; // counts down in rounds 1-5, counts up in Sustain
 let timerId = null;
 let roundActive = false;
-let currentRound = 0; // 0 = Baseline, 4 = Standardize
-let buttonMode = "start"; // "start" = begin round, "next" = load next round
-const scores = []; // score for each round, used for comparisons
+let currentRound = 0;
+let buttonMode = "start"; // "start", "next", or "restart"
+let missingNumbers = []; // the hidden cards in the Sustain round
+let gapsFound = 0;
+const scores = [];
 
 // ===== Helpers =====
 function shuffle(list) {
@@ -87,12 +102,15 @@ function randomBetween(min, max) {
   return Math.random() * (max - min) + min;
 }
 
+function isSustain() {
+  return ROUNDS[currentRound].mode === "findMissing";
+}
+
 // ===== Work out where every card goes (returns left/top in %) =====
 function getPositions(layout, count, messy) {
   const cellW = 100 / GRID_COLS;
   const cellH = 100 / GRID_ROWS;
 
-  // Turn a grid slot into a position; messy rounds get a random nudge
   const toPos = (col, row) => ({
     left:
       col * cellW + (messy ? randomBetween(0.5, cellW * 0.35) : cellW * 0.2),
@@ -100,7 +118,6 @@ function getPositions(layout, count, messy) {
       row * cellH + (messy ? randomBetween(0.5, cellH * 0.35) : cellH * 0.25),
   });
 
-  // Standardize: 10 columns x 5 rows, in number order
   if (layout === "standard") {
     const cols = 10;
     const rows = 5;
@@ -110,7 +127,6 @@ function getPositions(layout, count, messy) {
     }));
   }
 
-  // Set in Order: card 1 -> Q1, 2 -> Q2, 3 -> Q3, 4 -> Q4, 5 -> Q1 ...
   if (layout === "quadrants") {
     const halfC = GRID_COLS / 2;
     const halfR = GRID_ROWS / 2;
@@ -132,7 +148,6 @@ function getPositions(layout, count, messy) {
     });
   }
 
-  // Random: any free slot on the board
   const slots = [];
   for (let row = 0; row < GRID_ROWS; row++) {
     for (let col = 0; col < GRID_COLS; col++) {
@@ -147,6 +162,16 @@ function getPositions(layout, count, messy) {
 function buildBoard(round) {
   board.innerHTML = "";
   board.classList.toggle("quadrants", round.layout === "quadrants");
+  board.classList.toggle("sustain", round.mode === "findMissing");
+
+  // Sustain: secretly pick which cards are missing
+  missingNumbers = [];
+  if (round.mode === "findMissing") {
+    const pool = shuffle(
+      Array.from({ length: round.maxNumber }, (_, i) => i + 1),
+    );
+    missingNumbers = pool.slice(0, round.missingCount);
+  }
 
   const positions = getPositions(round.layout, round.maxNumber, round.messy);
 
@@ -157,6 +182,10 @@ function buildBoard(round) {
     card.dataset.number = n;
     card.style.left = positions[n - 1].left + "%";
     card.style.top = positions[n - 1].top + "%";
+
+    if (missingNumbers.includes(n)) {
+      card.classList.add("gap"); // invisible, but still clickable
+    }
 
     if (round.messy) {
       card.style.transform = `rotate(${randomBetween(-35, 35)}deg)`;
@@ -170,19 +199,29 @@ function buildBoard(round) {
 
 // ===== Update the status bar =====
 function updateStatus() {
-  timerEl.textContent = timeLeft;
-  nextNumberEl.textContent = nextNumber <= TARGET_COUNT ? nextNumber : "Done";
-  foundCountEl.textContent = `${nextNumber - 1} / ${TARGET_COUNT}`;
+  timerEl.textContent = clock;
+  if (isSustain()) {
+    timerTitleEl.textContent = "Elapsed";
+    nextTitleEl.textContent = "Find";
+    nextNumberEl.textContent = "Gaps";
+    foundCountEl.textContent = `${gapsFound} / ${missingNumbers.length}`;
+  } else {
+    timerTitleEl.textContent = "Time left";
+    nextTitleEl.textContent = "Find next";
+    nextNumberEl.textContent = nextNumber <= TARGET_COUNT ? nextNumber : "Done";
+    foundCountEl.textContent = `${nextNumber - 1} / ${TARGET_COUNT}`;
+  }
 }
 
-// ===== Load a round (board, text, button) =====
+// ===== Load a round =====
 function loadRound(index) {
   currentRound = index;
   const round = ROUNDS[index];
 
   buildBoard(round);
   nextNumber = 1;
-  timeLeft = ROUND_SECONDS;
+  gapsFound = 0;
+  clock = isSustain() ? 0 : ROUND_SECONDS;
   board.classList.add("locked");
 
   roundLabelEl.textContent = `Round ${index + 1} of ${ROUNDS.length}: ${round.name}`;
@@ -202,26 +241,48 @@ function startRound() {
   updateStatus();
 
   timerId = setInterval(() => {
-    timeLeft--;
-    updateStatus();
-    if (timeLeft <= 0) {
-      endRound();
+    if (isSustain()) {
+      clock++;
+      updateStatus();
+      if (clock >= SUSTAIN_LIMIT) endRound();
+    } else {
+      clock--;
+      updateStatus();
+      if (clock <= 0) endRound();
     }
   }, 1000);
 }
 
-// ===== End the round, save score, set up the next step =====
+// ===== End the round =====
 function endRound() {
   clearInterval(timerId);
   roundActive = false;
   board.classList.add("locked");
 
+  // --- Sustain round: record time, reveal gaps, show final summary ---
+  if (isSustain()) {
+    const solved = gapsFound === missingNumbers.length;
+    scores[currentRound] = solved ? clock : null;
+    document.getElementById(`score-${currentRound + 1}`).textContent = solved
+      ? `${clock}s`
+      : "Not found";
+    board
+      .querySelectorAll(".card.gap")
+      .forEach((c) => c.classList.add("revealed"));
+    showSummary(solved);
+
+    buttonMode = "restart";
+    startBtn.textContent = "Play Again";
+    startBtn.disabled = false;
+    return;
+  }
+
+  // --- Rounds 1-5 ---
   const score = nextNumber - 1;
   scores[currentRound] = score;
   document.getElementById(`score-${currentRound + 1}`).textContent =
     `${score}/${TARGET_COUNT}`;
 
-  // Compare with Baseline (skipped in round 1)
   let comparison = "";
   if (currentRound > 0) {
     const change = score - scores[0];
@@ -230,17 +291,50 @@ function endRound() {
 
   instructionsEl.innerHTML = `
     <h2>${ROUNDS[currentRound].name} complete</h2>
-    <p>You found <strong>${score} of ${TARGET_COUNT}</strong> cards in ${ROUND_SECONDS - timeLeft} seconds.${comparison}</p>
+    <p>You found <strong>${score} of ${TARGET_COUNT}</strong> cards in ${ROUND_SECONDS - clock} seconds.${comparison}</p>
   `;
 
-  if (currentRound < ROUNDS.length - 1) {
-    buttonMode = "next";
-    startBtn.textContent = `Next Round: ${ROUNDS[currentRound + 1].name}`;
-    startBtn.disabled = false;
-  } else {
-    startBtn.textContent = "All Rounds Complete";
-    startBtn.disabled = true;
-  }
+  buttonMode = "next";
+  startBtn.textContent = `Next Round: ${ROUNDS[currentRound + 1].name}`;
+  startBtn.disabled = false;
+}
+
+// ===== Final results and debrief =====
+function showSummary(solved) {
+  const base = scores[0];
+  const std = scores[4];
+
+  const rows = ROUNDS.slice(0, 5)
+    .map((r, i) => {
+      const change = scores[i] - base;
+      const vsBase = i === 0 ? "–" : `${change >= 0 ? "+" : ""}${change}`;
+      return `<tr><td>${r.name}</td><td>${scores[i]}/${TARGET_COUNT}</td><td>${vsBase}</td></tr>`;
+    })
+    .join("");
+
+  const multiple =
+    base > 0 ? `${(std / base).toFixed(1)}x` : "n/a (Baseline was 0)";
+  const missingList = [...missingNumbers].sort((a, b) => a - b).join(" and ");
+  const sustainText = solved
+    ? `You spotted both missing cards in <strong>${scores[5]} seconds</strong>.`
+    : `The missing cards were not found within ${SUSTAIN_LIMIT} seconds.`;
+
+  instructionsEl.innerHTML = `
+    <h2>Game complete: results</h2>
+    <p>${sustainText} The missing cards were <strong>${missingList}</strong>.</p>
+    <table class="summary-table">
+      <thead><tr><th>Round</th><th>Cards found</th><th>vs Baseline</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p>Productivity, Baseline to Standardize: <strong>${multiple}</strong> with the same person, the same task and the same time.</p>
+    <h3>Debrief questions</h3>
+    <ol>
+      <li>Which 5S step gave the biggest improvement, and why?</li>
+      <li>How long would it take to find the two missing cards on the Baseline board?</li>
+      <li>Where in your own work area is the "clutter" (cards 51 to 90)?</li>
+      <li>What would it take to sustain the standard in your area: audits, visual controls, ownership?</li>
+    </ol>
+  `;
 }
 
 // ===== Card clicks =====
@@ -250,23 +344,43 @@ board.addEventListener("click", (event) => {
   const card = event.target.closest(".card");
   if (!card) return;
 
+  // Sustain: only clicks on hidden gaps count
+  if (isSustain()) {
+    if (
+      card.classList.contains("gap") &&
+      !card.classList.contains("revealed")
+    ) {
+      card.classList.add("revealed");
+      gapsFound++;
+      updateStatus();
+      if (gapsFound === missingNumbers.length) endRound();
+    }
+    return;
+  }
+
+  // Rounds 1-5: click in sequence
   if (Number(card.dataset.number) === nextNumber) {
     card.classList.add("found");
     nextNumber++;
     updateStatus();
-    if (nextNumber > TARGET_COUNT) {
-      endRound();
-    }
+    if (nextNumber > TARGET_COUNT) endRound();
   }
 });
 
-// ===== One button: Start Round or Next Round =====
-startBtn.addEventListener("click", () => {
-  if (buttonMode === "start") {
-    startRound();
-  } else {
-    loadRound(currentRound + 1);
+// ===== Reset for a new group =====
+function resetGame() {
+  scores.length = 0;
+  for (let i = 1; i <= ROUNDS.length; i++) {
+    document.getElementById(`score-${i}`).textContent = "–";
   }
+  loadRound(0);
+}
+
+// ===== One button: Start, Next, or Play Again =====
+startBtn.addEventListener("click", () => {
+  if (buttonMode === "start") startRound();
+  else if (buttonMode === "next") loadRound(currentRound + 1);
+  else resetGame();
 });
 
 // ===== Run on page load =====
