@@ -324,3 +324,93 @@ body {
     padding: 4px 6px;
   }
 }
+/* ===== Footer ===== */
+.app-footer {
+  text-align: center;
+  padding: 16px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.app-footer p {
+  margin: 2px 0;
+}
+/* ===== Fit whole game on one screen (no page scrolling) ===== */
+html,
+body {
+  height: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh; /* exactly the visible browser height */
+  overflow: hidden; /* no page scrollbar */
+}
+
+.app-header {
+  flex: 0 0 auto;
+  padding: 8px 24px;
+}
+.app-header h1 {
+  font-size: 1.25rem;
+}
+
+.container {
+  flex: 1; /* take all space below the header */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-height: 0; /* lets the board shrink when needed */
+  padding: 8px 16px;
+}
+
+/* Compact status bar */
+.status-bar {
+  margin-bottom: 0;
+  padding: 6px 16px;
+}
+.status-value {
+  font-size: 1.4rem;
+}
+.btn-primary {
+  padding: 8px 20px;
+}
+
+/* Board fills the leftover height */
+.board-wrap {
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 0;
+}
+.board {
+  aspect-ratio: auto; /* stop width from controlling height */
+  height: 100%;
+}
+
+/* Compact scoreboard */
+.scoreboard {
+  padding: 6px 16px;
+}
+.scoreboard h2 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+.score-box {
+  padding: 4px;
+}
+.score-value {
+  font-size: 1.2rem;
+}
+
+/* Phones: one screen is too cramped, so allow scrolling again */
+@media (max-width: 700px) {
+  body {
+    height: auto;
+    overflow: auto;
+  }
+  .board {
+    aspect-ratio: 4 / 3;
+    height: auto;
+  }
+}
