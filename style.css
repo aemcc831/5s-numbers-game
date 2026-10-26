@@ -129,6 +129,7 @@ body {
 
 /* ===== Cards ===== */
 .card {
+  z-index: 1;
   position: absolute;
   min-width: 40px;
   padding: 6px 8px;
@@ -211,4 +212,26 @@ body {
     min-width: 30px;
     padding: 4px;
   }
+}
+/* ===== Set in Order: quadrant divider lines ===== */
+.board.quadrants::before,
+.board.quadrants::after {
+  content: "";
+  position: absolute;
+  background: #9aa5b5;
+  z-index: 0;
+}
+.board.quadrants::before {
+  /* vertical line */
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+}
+.board.quadrants::after {
+  /* horizontal line */
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 3px;
 }
