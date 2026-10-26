@@ -1,6 +1,6 @@
 // ===== Game settings =====
 const TARGET_COUNT = 50; // cards the player must find (1-50)
-const ROUND_SECONDS = 5; // countdown for rounds 1-5
+const ROUND_SECONDS = 30; // countdown for rounds 1-5
 const SUSTAIN_LIMIT = 60; // maximum seconds allowed in the Sustain round
 const REVEAL_DELAY = 1500; // ms to show red gaps before the summary pop-up
 const GRID_COLS = 12;
