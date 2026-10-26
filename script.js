@@ -1,7 +1,8 @@
 // ===== Game settings =====
 const TARGET_COUNT = 50; // cards the player must find (1-50)
-const ROUND_SECONDS = 30; // countdown for rounds 1-5
+const ROUND_SECONDS = 5; // countdown for rounds 1-5
 const SUSTAIN_LIMIT = 60; // maximum seconds allowed in the Sustain round
+const REVEAL_DELAY = 1500; // ms to show red gaps before the summary pop-up
 const GRID_COLS = 12;
 const GRID_ROWS = 8;
 const COLORS = [
@@ -75,17 +76,22 @@ const nextNumberEl = document.getElementById("next-number");
 const nextTitleEl = document.getElementById("next-title");
 const foundCountEl = document.getElementById("found-count");
 const startBtn = document.getElementById("start-btn");
-const instructionsEl = document.getElementById("instructions");
 const roundLabelEl = document.getElementById("round-label");
+const popupEl = document.getElementById("round-popup");
+const popupStepEl = document.getElementById("popup-step");
+const popupTitleEl = document.getElementById("popup-title");
+const popupBodyEl = document.getElementById("popup-body");
+const popupBtn = document.getElementById("popup-btn");
 
 // ===== Game state =====
 let nextNumber = 1;
 let clock = ROUND_SECONDS; // counts down in rounds 1-5, counts up in Sustain
 let timerId = null;
+let summaryTimeoutId = null; // delayed summary pop-up after Sustain
 let roundActive = false;
 let currentRound = 0;
 let buttonMode = "start"; // "start", "next", or "restart"
-let missingNumbers = []; // the hidden cards in the Sustain round
+let missingNumbers = [];
 let gapsFound = 0;
 const scores = [];
 
@@ -104,6 +110,31 @@ function randomBetween(min, max) {
 
 function isSustain() {
   return ROUNDS[currentRound].mode === "findMissing";
+}
+
+function stepLabel() {
+  return `Round ${currentRound + 1} of ${ROUNDS.length}: ${ROUNDS[currentRound].name}`;
+}
+
+// ===== Pop-up controls =====
+function showPopup(title, html) {
+  popupStepEl.textContent = stepLabel();
+  popupTitleEl.textContent = title;
+  popupBodyEl.innerHTML = html;
+  popupEl.classList.remove("hidden");
+}
+
+function hidePopup() {
+  popupEl.classList.add("hidden");
+}
+
+// Keep the status-bar button and pop-up button in sync
+function setButtons(mode, text, disabled = false) {
+  buttonMode = mode;
+  [startBtn, popupBtn].forEach((btn) => {
+    btn.textContent = text;
+    btn.disabled = disabled;
+  });
 }
 
 // ===== Work out where every card goes (returns left/top in %) =====
@@ -164,7 +195,6 @@ function buildBoard(round) {
   board.classList.toggle("quadrants", round.layout === "quadrants");
   board.classList.toggle("sustain", round.mode === "findMissing");
 
-  // Sustain: secretly pick which cards are missing
   missingNumbers = [];
   if (round.mode === "findMissing") {
     const pool = shuffle(
@@ -184,7 +214,7 @@ function buildBoard(round) {
     card.style.top = positions[n - 1].top + "%";
 
     if (missingNumbers.includes(n)) {
-      card.classList.add("gap"); // invisible, but still clickable
+      card.classList.add("gap");
     }
 
     if (round.messy) {
@@ -213,7 +243,7 @@ function updateStatus() {
   }
 }
 
-// ===== Load a round =====
+// ===== Load a round: build board, show briefing pop-up =====
 function loadRound(index) {
   currentRound = index;
   const round = ROUNDS[index];
@@ -224,19 +254,17 @@ function loadRound(index) {
   clock = isSustain() ? 0 : ROUND_SECONDS;
   board.classList.add("locked");
 
-  roundLabelEl.textContent = `Round ${index + 1} of ${ROUNDS.length}: ${round.name}`;
-  instructionsEl.innerHTML = `<h2>${round.title}</h2><p>${round.text}</p>`;
-
-  buttonMode = "start";
-  startBtn.textContent = "Start Round";
-  startBtn.disabled = false;
+  roundLabelEl.textContent = stepLabel();
+  showPopup(round.title, `<p>${round.text}</p>`);
+  setButtons("start", "Start Round");
   updateStatus();
 }
 
 // ===== Start the clock =====
 function startRound() {
   roundActive = true;
-  startBtn.disabled = true;
+  hidePopup();
+  setButtons("start", "Round in progress", true);
   board.classList.remove("locked");
   updateStatus();
 
@@ -253,13 +281,13 @@ function startRound() {
   }, 1000);
 }
 
-// ===== End the round =====
+// ===== End the round: show results pop-up =====
 function endRound() {
   clearInterval(timerId);
   roundActive = false;
   board.classList.add("locked");
 
-  // --- Sustain round: record time, reveal gaps, show final summary ---
+  // --- Sustain: reveal gaps, then show the final summary ---
   if (isSustain()) {
     const solved = gapsFound === missingNumbers.length;
     scores[currentRound] = solved ? clock : null;
@@ -269,11 +297,9 @@ function endRound() {
     board
       .querySelectorAll(".card.gap")
       .forEach((c) => c.classList.add("revealed"));
-    showSummary(solved);
 
-    buttonMode = "restart";
-    startBtn.textContent = "Play Again";
-    startBtn.disabled = false;
+    setButtons("restart", "Play Again");
+    summaryTimeoutId = setTimeout(() => showSummary(solved), REVEAL_DELAY);
     return;
   }
 
@@ -286,20 +312,17 @@ function endRound() {
   let comparison = "";
   if (currentRound > 0) {
     const change = score - scores[0];
-    comparison = ` That is <strong>${change >= 0 ? "+" : ""}${change} cards</strong> compared with Baseline.`;
+    comparison = `<p>That is <strong>${change >= 0 ? "+" : ""}${change} cards</strong> compared with Baseline.</p>`;
   }
 
-  instructionsEl.innerHTML = `
-    <h2>${ROUNDS[currentRound].name} complete</h2>
-    <p>You found <strong>${score} of ${TARGET_COUNT}</strong> cards in ${ROUND_SECONDS - clock} seconds.${comparison}</p>
-  `;
-
-  buttonMode = "next";
-  startBtn.textContent = `Next Round: ${ROUNDS[currentRound + 1].name}`;
-  startBtn.disabled = false;
+  showPopup(
+    `${ROUNDS[currentRound].name} complete`,
+    `<p>You found <strong>${score} of ${TARGET_COUNT}</strong> cards in ${ROUND_SECONDS - clock} seconds.</p>${comparison}`,
+  );
+  setButtons("next", `Next Round: ${ROUNDS[currentRound + 1].name}`);
 }
 
-// ===== Final results and debrief =====
+// ===== Final results and debrief pop-up =====
 function showSummary(solved) {
   const base = scores[0];
   const std = scores[4];
@@ -319,8 +342,9 @@ function showSummary(solved) {
     ? `You spotted both missing cards in <strong>${scores[5]} seconds</strong>.`
     : `The missing cards were not found within ${SUSTAIN_LIMIT} seconds.`;
 
-  instructionsEl.innerHTML = `
-    <h2>Game complete: results</h2>
+  showPopup(
+    "Game complete: results",
+    `
     <p>${sustainText} The missing cards were <strong>${missingList}</strong>.</p>
     <table class="summary-table">
       <thead><tr><th>Round</th><th>Cards found</th><th>vs Baseline</th></tr></thead>
@@ -334,7 +358,8 @@ function showSummary(solved) {
       <li>Where in your own work area is the "clutter" (cards 51 to 90)?</li>
       <li>What would it take to sustain the standard in your area: audits, visual controls, ownership?</li>
     </ol>
-  `;
+  `,
+  );
 }
 
 // ===== Card clicks =====
@@ -344,7 +369,6 @@ board.addEventListener("click", (event) => {
   const card = event.target.closest(".card");
   if (!card) return;
 
-  // Sustain: only clicks on hidden gaps count
   if (isSustain()) {
     if (
       card.classList.contains("gap") &&
@@ -358,7 +382,6 @@ board.addEventListener("click", (event) => {
     return;
   }
 
-  // Rounds 1-5: click in sequence
   if (Number(card.dataset.number) === nextNumber) {
     card.classList.add("found");
     nextNumber++;
@@ -369,6 +392,7 @@ board.addEventListener("click", (event) => {
 
 // ===== Reset for a new group =====
 function resetGame() {
+  clearTimeout(summaryTimeoutId); // stop a pending summary from appearing
   scores.length = 0;
   for (let i = 1; i <= ROUNDS.length; i++) {
     document.getElementById(`score-${i}`).textContent = "–";
@@ -376,12 +400,15 @@ function resetGame() {
   loadRound(0);
 }
 
-// ===== One button: Start, Next, or Play Again =====
-startBtn.addEventListener("click", () => {
+// ===== Both buttons share one handler =====
+function handleMainButton() {
   if (buttonMode === "start") startRound();
   else if (buttonMode === "next") loadRound(currentRound + 1);
   else resetGame();
-});
+}
+
+startBtn.addEventListener("click", handleMainButton);
+popupBtn.addEventListener("click", handleMainButton);
 
 // ===== Run on page load =====
 loadRound(0);
